@@ -1,0 +1,18 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# IDEs
+.idea/
+.vscode/
+
+# Environment
+.env
+
+# OS
+.DS_Store

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/urfave/cli/v2"
 )
@@ -20,10 +21,14 @@ func main() {
 				Usage:   "Recursively process subdirectories",
 			},
 			&cli.StringFlag{
-				Name:    "config",
-				Aliases: []string{"c"},
-				Usage:   "Path to configuration file",
-				Value:   "config.json",
+				Usage: "Path to configuration file",
+				Value: "config.json",
+			},
+			&cli.IntFlag{
+				Name:    "workers",
+				Aliases: []string{"n"},
+				Usage:   "Number of concurrent workers",
+				Value:   4,
 			},
 		},
 		Action: func(c *cli.Context) error {
@@ -60,61 +65,71 @@ func main() {
 			}
 
 			// 4. Define the processing function (walker)
-			processPath := func(path string, info os.DirEntry, err error) error {
+			// Worker Pool Setup
+			numWorkers := c.Int("workers")
+			if numWorkers < 1 {
+				numWorkers = 1
+			}
+			fmt.Printf("Starting %d workers...\n", numWorkers)
+
+			jobs := make(chan string, numWorkers*2)
+			var wg sync.WaitGroup
+
+			// Worker function
+			worker := func(id int) {
+				defer wg.Done()
+				for path := range jobs {
+					// CACHE CHECK
+					if cached, _ := fileCache.Check(path); cached {
+						continue
+					}
+
+					finalPath, err := remuxFile(path, cfg)
+					if err != nil {
+						fmt.Printf("Worker %d: Failed to process %s: %v\n", id, path, err)
+					} else {
+						// Success (remuxed OR skipped as compliant)
+						if finalPath != "" {
+							fileCache.Update(finalPath)
+						}
+					}
+				}
+			}
+
+			// Start workers
+			for i := 0; i < numWorkers; i++ {
+				wg.Add(1)
+				go worker(i)
+			}
+
+			// Walk and send jobs
+			err = filepath.WalkDir(targetDir, func(path string, info os.DirEntry, err error) error {
 				if err != nil {
 					return err
 				}
 				if info.IsDir() {
-					// If not recursive and this is a subdir, skip it
 					if !isRecursive && path != targetDir {
 						return filepath.SkipDir
 					}
 					return nil
 				}
 
-				// Check extension
-				isMkv := strings.ToLower(filepath.Ext(path)) == ".mkv"
-
-				// CACHE CHECK
-				if isMkv {
-					// Check if cached
-					if cached, _ := fileCache.Check(path); cached {
-						// Optional: Debug mode to see this?
-						// fmt.Printf("Skipping cached: %s\n", path)
-						return nil
-					}
-
-					// We removed the isRemux check logic in favor of cache,
-					// BUT we should probably still avoid processing our own output if it wasn't caught by cache for some reason
-					// (e.g. first run interrupted).
-					// Actually, the plan said "Replace the simplistic check... allow for cleaner filenames".
-					// So let's rely on cache + internal logic (remuxFile checks tracks).
-					// If a file is named "-remux.mkv" but isn't in cache, we might process it.
-					// If it's already fixed, remuxFile returns "Skipped".
-
-					finalPath, err := remuxFile(path, cfg)
-					if err != nil {
-						fmt.Printf("Failed to process %s: %v\n", path, err)
-					} else {
-						// Success (remuxed OR skipped as compliant)
-						// Update cache with the FINAL path
-						if finalPath != "" {
-							fileCache.Update(finalPath)
-							// Save periodically or after every file?
-							// Save after every file is safer for interrupts, but slower.
-							// Given this is a batch process on potentially large files, saving logic is cheap relative to IO.
-							fileCache.Save()
-						}
-					}
+				if strings.ToLower(filepath.Ext(path)) == ".mkv" {
+					jobs <- path
 				}
 				return nil
-			}
+			})
 
-			// 4. Walk the directory
-			// WalkDir is efficient and works for both recursive and single-dir (via logic above)
-			err = filepath.WalkDir(targetDir, processPath)
+			close(jobs) // Signal workers to finish
+			wg.Wait()   // Wait for all workers
+
 			if err != nil {
 				return fmt.Errorf("error walking directory: %v", err)
+			}
+
+			// Save cache once at the end
+			if err := fileCache.Save(); err != nil {
+				fmt.Printf("Warning: Failed to save cache: %v\n", err)
 			}
 
 			fmt.Println("Batch processing complete.")
