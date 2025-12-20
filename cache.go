@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -37,13 +38,18 @@ func NewCache(path string) (*Cache, error) {
 
 // Check returns true if the file is cached and the modtime matches.
 func (c *Cache) Check(filePath string) (bool, error) {
-	stat, err := os.Stat(filePath)
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return false, err
+	}
+
+	stat, err := os.Stat(absPath)
 	if err != nil {
 		return false, err
 	}
 
 	c.mu.RLock()
-	cachedTime, ok := c.Items[filePath]
+	cachedTime, ok := c.Items[absPath]
 	c.mu.RUnlock()
 
 	if !ok {
@@ -59,13 +65,18 @@ func (c *Cache) Check(filePath string) (bool, error) {
 
 // Update adds or updates a file in the cache.
 func (c *Cache) Update(filePath string) error {
-	stat, err := os.Stat(filePath)
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return err
+	}
+
+	stat, err := os.Stat(absPath)
 	if err != nil {
 		return err
 	}
 
 	c.mu.Lock()
-	c.Items[filePath] = stat.ModTime().Unix()
+	c.Items[absPath] = stat.ModTime().Unix()
 	c.mu.Unlock()
 	return nil
 }

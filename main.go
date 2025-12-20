@@ -91,7 +91,9 @@ func main() {
 					} else {
 						// Success (remuxed OR skipped as compliant)
 						if finalPath != "" {
-							fileCache.Update(finalPath)
+							if err := fileCache.Update(finalPath); err != nil {
+								fmt.Printf("Worker %d: Warning - Failed to update cache for %s: %v\n", id, finalPath, err)
+							}
 						}
 					}
 				}
