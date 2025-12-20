@@ -21,6 +21,7 @@ func main() {
 				Usage:   "Recursively process subdirectories",
 			},
 			&cli.StringFlag{
+				Name:  "config",
 				Usage: "Path to configuration file",
 				Value: "config.json",
 			},
