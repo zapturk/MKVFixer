@@ -1,0 +1,10 @@
+{
+    "video_language": "eng",
+    "audio_languages": [
+        "eng"
+    ],
+    "default_audio_language": "eng",
+    "subtitle_languages": [
+        "eng"
+    ]
+}
