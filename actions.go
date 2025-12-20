@@ -70,7 +70,7 @@ func remuxFile(inputFile string, cfg *Config) (string, error) {
 	}
 
 	if hasVideo && !needsFix {
-		fmt.Printf("Skipping %s: Already meets requirements (Video=%s, Subs=%v)\n", inputFile, cfg.VideoLanguage, cfg.SubtitleLanguages)
+		fmt.Printf("Skipping %s: Already meets requirements (Video=%s, Subs=%v) -> Adding to cache\n", inputFile, cfg.VideoLanguage, cfg.SubtitleLanguages)
 		return inputFile, nil
 	}
 
