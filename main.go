@@ -3,9 +3,11 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/urfave/cli/v2"
 )
@@ -64,6 +66,15 @@ func main() {
 			} else {
 				fmt.Printf("Loaded cache with %d items\n", len(fileCache.Items))
 			}
+
+			// Ensure we save the cache on exit (even on error/panic)
+			defer func() {
+				if err := fileCache.Save(); err != nil {
+					fmt.Printf("Warning: Failed to save cache: %v\n", err)
+				} else {
+					fmt.Println("Cache saved.")
+				}
+			}()
 
 			// 4. Define the processing function (walker)
 			// Worker Pool Setup
@@ -124,16 +135,31 @@ func main() {
 			})
 
 			close(jobs) // Signal workers to finish
-			wg.Wait()   // Wait for all workers
+			// Wait for workers or interrupt
+			done := make(chan struct{})
+			go func() {
+				wg.Wait()
+				close(done)
+			}()
+
+			// Handle interrupts
+			sigChan := make(chan os.Signal, 1)
+			signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+			select {
+			case <-done:
+				// Finished normally
+			case <-sigChan:
+				fmt.Println("\nInterrupt received. Stopping...")
+				// We can just exit, the defer will handle saving.
+				// But we should probably stop feeding jobs?
+				// For now, let's just break and let defer save.
+			}
 
 			if err != nil {
 				return fmt.Errorf("error walking directory: %v", err)
 			}
-
-			// Save cache once at the end
-			if err := fileCache.Save(); err != nil {
-				fmt.Printf("Warning: Failed to save cache: %v\n", err)
-			}
+			// Saved by defer
 
 			fmt.Println("Batch processing complete.")
 			return nil
