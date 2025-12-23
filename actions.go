@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -19,10 +20,10 @@ const (
 )
 
 // remuxFile contains the core logic for a single file, returns the "final" path on success/skip
-func remuxFile(inputFile string, cfg *Config, checkOnly bool, actionType ActionType) (string, error) {
+func remuxFile(ctx context.Context, inputFile string, cfg *Config, checkOnly bool, actionType ActionType) (string, error) {
 	fmt.Printf("Processing: %s\n", inputFile)
 	// A. Inspect file
-	cmd := exec.Command("mkvmerge", "-J", inputFile)
+	cmd := exec.CommandContext(ctx, "mkvmerge", "-J", inputFile)
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("mkvmerge inspection failed: %w", err)
@@ -167,7 +168,7 @@ func remuxFile(inputFile string, cfg *Config, checkOnly bool, actionType ActionT
 	args = append(args, inputFile)
 
 	// D. Execute Remux
-	remuxCmd := exec.Command("mkvmerge", args...)
+	remuxCmd := exec.CommandContext(ctx, "mkvmerge", args...)
 	// Connect stdout/stderr if you want to see mkvmerge progress bars,
 	// otherwise keep it silent or log to file.
 	// remuxCmd.Stdout = os.Stdout

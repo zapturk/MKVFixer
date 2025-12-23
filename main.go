@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -75,6 +76,10 @@ func main() {
 }
 
 func runProcessing(c *cli.Context, actionType ActionType) error {
+	// Create context that listens for the interrupt signal from the OS.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	// 1. Load Config
 	configPath := c.String("config")
 	cfg, err := loadConfig(configPath)
@@ -135,6 +140,13 @@ func runProcessing(c *cli.Context, actionType ActionType) error {
 	worker := func(id int) {
 		defer wg.Done()
 		for path := range jobs {
+			// Check context before starting new work
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
 			// CACHE CHECK
 			// Use actionType-prefixed key for cache
 			absPath, _ := filepath.Abs(path)
@@ -145,7 +157,7 @@ func runProcessing(c *cli.Context, actionType ActionType) error {
 				continue
 			}
 
-			finalPath, err := remuxFile(path, cfg, checkOnly, actionType)
+			finalPath, err := remuxFile(ctx, path, cfg, checkOnly, actionType)
 			if err != nil {
 				fmt.Printf("Worker %d: Failed to process %s: %v\n", id, path, err)
 			} else {
@@ -168,6 +180,13 @@ func runProcessing(c *cli.Context, actionType ActionType) error {
 
 	// Walk and send jobs
 	err = filepath.WalkDir(targetDir, func(path string, info os.DirEntry, err error) error {
+		// Stop walking if interrupted
+		select {
+		case <-ctx.Done():
+			return filepath.SkipDir
+		default:
+		}
+
 		if err != nil {
 			return err
 		}
@@ -185,23 +204,13 @@ func runProcessing(c *cli.Context, actionType ActionType) error {
 	})
 
 	close(jobs) // Signal workers to finish
-	// Wait for workers or interrupt
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
+	wg.Wait()   // Wait for workers to cleanup
 
-	// Handle interrupts
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
-	select {
-	case <-done:
-		// Finished normally
-	case <-sigChan:
-		fmt.Println("\nInterrupt received. Stopping...")
-		// We can just exit, the defer will handle saving.
+	if ctx.Err() != nil {
+		fmt.Println("\nProcess interrupted. Cleaning up...")
+		// Return nil or specific error?
+		// We want defer to save cache, which happens on return.
+		return nil
 	}
 
 	if err != nil {
