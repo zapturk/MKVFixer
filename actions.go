@@ -9,8 +9,17 @@ import (
 	"strings"
 )
 
+// ActionType defines the type of cleanup to perform
+type ActionType string
+
+const (
+	ActionAll      ActionType = "all"
+	ActionAudio    ActionType = "audio"
+	ActionSubtitle ActionType = "subtitle"
+)
+
 // remuxFile contains the core logic for a single file, returns the "final" path on success/skip
-func remuxFile(inputFile string, cfg *Config, checkOnly bool) (string, error) {
+func remuxFile(inputFile string, cfg *Config, checkOnly bool, actionType ActionType) (string, error) {
 	fmt.Printf("Processing: %s\n", inputFile)
 	// A. Inspect file
 	cmd := exec.Command("mkvmerge", "-J", inputFile)
@@ -26,7 +35,7 @@ func remuxFile(inputFile string, cfg *Config, checkOnly bool) (string, error) {
 
 	// Check requirements:
 	// 1. Video must be cfg.VideoLanguage
-	// 2. ONLY 'eng' subtitles should be kept -> ONLY cfg.SubtitleLanguages
+	// 2. Audio/Subtitle checks depending on actionType
 	hasVideo := false
 	needsFix := false
 
@@ -43,28 +52,32 @@ func remuxFile(inputFile string, cfg *Config, checkOnly bool) (string, error) {
 	for _, track := range info.Tracks {
 		if track.Type == "video" {
 			hasVideo = true
-			if track.Properties.Language != cfg.VideoLanguage {
-				needsFix = true
-			}
-		}
-		if track.Type == "audio" {
-			// If audio is NOT in the allowed list, we need to fix (remux to remove it)
-			// OR if audio IS in the list but not marked default when it should be
-			if !isInList(track.Properties.Language, cfg.AudioLanguages) {
-				needsFix = true
-			} else {
-				// It IS in the list. Check default flag compliance.
-				// If this track's language is the target DefaultAudio, it SHOULD be default.
-				// Otherwise, it SHOULD NOT be default.
-				shouldBeDefault := track.Properties.Language == cfg.DefaultAudio
-				if track.Properties.DefaultTrack != shouldBeDefault {
+			if actionType == ActionAll || actionType == ActionAudio {
+				if track.Properties.Language != cfg.VideoLanguage {
 					needsFix = true
 				}
 			}
 		}
+		if track.Type == "audio" {
+			if actionType == ActionAll || actionType == ActionAudio {
+				// If audio is NOT in the allowed list, we need to fix (remux to remove it)
+				// OR if audio IS in the list but not marked default when it should be
+				if !isInList(track.Properties.Language, cfg.AudioLanguages) {
+					needsFix = true
+				} else {
+					// It IS in the list. Check default flag compliance.
+					shouldBeDefault := track.Properties.Language == cfg.DefaultAudio
+					if track.Properties.DefaultTrack != shouldBeDefault {
+						needsFix = true
+					}
+				}
+			}
+		}
 		if track.Type == "subtitles" {
-			if !isInList(track.Properties.Language, cfg.SubtitleLanguages) {
-				needsFix = true
+			if actionType == ActionAll || actionType == ActionSubtitle {
+				if !isInList(track.Properties.Language, cfg.SubtitleLanguages) {
+					needsFix = true
+				}
 			}
 		}
 	}
@@ -93,49 +106,59 @@ func remuxFile(inputFile string, cfg *Config, checkOnly bool) (string, error) {
 	for _, track := range info.Tracks {
 		// Filter Audio
 		if track.Type == "audio" {
-			if isInList(track.Properties.Language, cfg.AudioLanguages) {
-				keepAudioIds = append(keepAudioIds, fmt.Sprintf("%d", track.ID))
+			if actionType == ActionAll || actionType == ActionAudio {
+				if isInList(track.Properties.Language, cfg.AudioLanguages) {
+					keepAudioIds = append(keepAudioIds, fmt.Sprintf("%d", track.ID))
+				}
 			}
 		}
 		// Filter Subtitles
 		if track.Type == "subtitles" {
-			if isInList(track.Properties.Language, cfg.SubtitleLanguages) {
-				keepSubtitleIds = append(keepSubtitleIds, fmt.Sprintf("%d", track.ID))
+			if actionType == ActionAll || actionType == ActionSubtitle {
+				if isInList(track.Properties.Language, cfg.SubtitleLanguages) {
+					keepSubtitleIds = append(keepSubtitleIds, fmt.Sprintf("%d", track.ID))
+				}
 			}
 		}
 	}
 
 	// Handle Audio: keep explicit list
-	if len(keepAudioIds) > 0 {
-		args = append(args, "--audio-tracks", strings.Join(keepAudioIds, ","))
-	} else {
-		// If no audio matches config, mkvmerge defaults to keeping all? No, we should probably keep none?
-		// Be careful here. If user config is wrong, they lose all audio.
-		// Let's assume strict compliance.
-		args = append(args, "--no-audio")
+	if actionType == ActionAll || actionType == ActionAudio {
+		if len(keepAudioIds) > 0 {
+			args = append(args, "--audio-tracks", strings.Join(keepAudioIds, ","))
+		} else {
+			// If no audio matches config, strict compliance means no audio.
+			args = append(args, "--no-audio")
+		}
 	}
 
 	// Handle Subtitles: keep explicit list
-	if len(keepSubtitleIds) > 0 {
-		args = append(args, "--subtitle-tracks", strings.Join(keepSubtitleIds, ","))
-	} else {
-		args = append(args, "--no-subtitles")
+	if actionType == ActionAll || actionType == ActionSubtitle {
+		if len(keepSubtitleIds) > 0 {
+			args = append(args, "--subtitle-tracks", strings.Join(keepSubtitleIds, ","))
+		} else {
+			args = append(args, "--no-subtitles")
+		}
 	}
 
 	for _, track := range info.Tracks {
 		// Set Video Language
 		if track.Type == "video" {
-			args = append(args, "--language", fmt.Sprintf("%d:%s", track.ID, cfg.VideoLanguage))
+			if actionType == ActionAll || actionType == ActionAudio {
+				args = append(args, "--language", fmt.Sprintf("%d:%s", track.ID, cfg.VideoLanguage))
+			}
 		}
 
 		// Handle Audio Defaults
 		if track.Type == "audio" {
-			// Only mess with flags if we are keeping this track
-			if isInList(track.Properties.Language, cfg.AudioLanguages) {
-				if track.Properties.Language == cfg.DefaultAudio {
-					args = append(args, "--default-track", fmt.Sprintf("%d:yes", track.ID))
-				} else {
-					args = append(args, "--default-track", fmt.Sprintf("%d:no", track.ID))
+			if actionType == ActionAll || actionType == ActionAudio {
+				// Only mess with flags if we are keeping this track
+				if isInList(track.Properties.Language, cfg.AudioLanguages) {
+					if track.Properties.Language == cfg.DefaultAudio {
+						args = append(args, "--default-track", fmt.Sprintf("%d:yes", track.ID))
+					} else {
+						args = append(args, "--default-track", fmt.Sprintf("%d:no", track.ID))
+					}
 				}
 			}
 		}

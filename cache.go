@@ -37,7 +37,7 @@ func NewCache(path string) (*Cache, error) {
 }
 
 // Check returns true if the file is cached and the modtime matches.
-func (c *Cache) Check(filePath string) (bool, error) {
+func (c *Cache) Check(cacheKey, filePath string) (bool, error) {
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {
 		return false, err
@@ -49,7 +49,7 @@ func (c *Cache) Check(filePath string) (bool, error) {
 	}
 
 	c.mu.RLock()
-	cachedTime, ok := c.Items[absPath]
+	cachedTime, ok := c.Items[cacheKey]
 	c.mu.RUnlock()
 
 	if !ok {
@@ -64,7 +64,7 @@ func (c *Cache) Check(filePath string) (bool, error) {
 }
 
 // Update adds or updates a file in the cache.
-func (c *Cache) Update(filePath string) error {
+func (c *Cache) Update(cacheKey, filePath string) error {
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {
 		return err
@@ -76,7 +76,7 @@ func (c *Cache) Update(filePath string) error {
 	}
 
 	c.mu.Lock()
-	c.Items[absPath] = stat.ModTime().Unix()
+	c.Items[cacheKey] = stat.ModTime().Unix()
 	c.mu.Unlock()
 	return nil
 }

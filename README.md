@@ -60,8 +60,14 @@ Create a `config.json` file in your working directory (or specify one with `--co
 ## Usage
 
 ```bash
-./mkvfixer [options] [directory]
+./mkvfixer [global options] [command] [directory]
 ```
+
+### Commands
+
+- `all`: Process both audio and subtitles (default if no command specified).
+- `audio`: Process only audio tracks.
+- `subtitle`: Process only subtitle tracks.
 
 If no directory is specified, it runs in the current directory.
 
