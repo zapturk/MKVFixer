@@ -69,6 +69,7 @@ If no directory is specified, it runs in the current directory.
 
 - `-r`, `--recursive`: Recursively process subdirectories.
 - `-n`, `--workers`: Number of concurrent workers (default: 4).
+- `-c`, `--check-only`: Only check files and populate cache for compliant ones, do not remux/modify files.
 - `--config`: Path to configuration file (default: `config.json`).
 - `-h`, `--help`: Show help message.
 

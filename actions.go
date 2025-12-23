@@ -10,7 +10,7 @@ import (
 )
 
 // remuxFile contains the core logic for a single file, returns the "final" path on success/skip
-func remuxFile(inputFile string, cfg *Config) (string, error) {
+func remuxFile(inputFile string, cfg *Config, checkOnly bool) (string, error) {
 	fmt.Printf("Processing: %s\n", inputFile)
 	// A. Inspect file
 	cmd := exec.Command("mkvmerge", "-J", inputFile)
@@ -72,6 +72,11 @@ func remuxFile(inputFile string, cfg *Config) (string, error) {
 	if hasVideo && !needsFix {
 		fmt.Printf("Skipping %s: Already meets requirements (Video=%s, Subs=%v) -> Adding to cache\n", inputFile, cfg.VideoLanguage, cfg.SubtitleLanguages)
 		return inputFile, nil
+	}
+
+	if checkOnly {
+		fmt.Printf("Skipping %s: Needs fixing (check-only mode)\n", inputFile)
+		return "", nil // Return empty string so it's NOT added to cache and NOT reported as error
 	}
 
 	// B. Build output filename

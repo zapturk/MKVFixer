@@ -33,6 +33,11 @@ func main() {
 				Usage:   "Number of concurrent workers",
 				Value:   4,
 			},
+			&cli.BoolFlag{
+				Name:    "check-only",
+				Aliases: []string{"c", "dry-run"},
+				Usage:   "Only check files and populate cache, do not remux",
+			},
 		},
 		Action: func(c *cli.Context) error {
 			// 1. Load Config
@@ -87,6 +92,7 @@ func main() {
 			jobs := make(chan string, numWorkers*2)
 			var wg sync.WaitGroup
 
+			checkOnly := c.Bool("check-only")
 			// Worker function
 			worker := func(id int) {
 				defer wg.Done()
@@ -96,7 +102,7 @@ func main() {
 						continue
 					}
 
-					finalPath, err := remuxFile(path, cfg)
+					finalPath, err := remuxFile(path, cfg, checkOnly)
 					if err != nil {
 						fmt.Printf("Worker %d: Failed to process %s: %v\n", id, path, err)
 					} else {
