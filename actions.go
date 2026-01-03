@@ -21,7 +21,7 @@ const (
 
 // remuxFile contains the core logic for a single file, returns the "final" path on success/skip
 func remuxFile(ctx context.Context, inputFile string, cfg *Config, checkOnly bool, actionType ActionType) (string, error) {
-	fmt.Printf("Processing: %s\n", inputFile)
+	fmt.Printf("Processing: %s\n", filepath.Base(inputFile))
 	// A. Inspect file
 	cmd := exec.CommandContext(ctx, "mkvmerge", "-J", inputFile)
 	output, err := cmd.Output()
@@ -84,12 +84,12 @@ func remuxFile(ctx context.Context, inputFile string, cfg *Config, checkOnly boo
 	}
 
 	if hasVideo && !needsFix {
-		fmt.Printf("Skipping %s: Already meets requirements (Video=%s, Subs=%v) -> Adding to cache\n", inputFile, cfg.VideoLanguage, cfg.SubtitleLanguages)
+		fmt.Printf("Skipping %s: Already meets requirements (Video=%s, Subs=%v) -> Adding to cache\n", filepath.Base(inputFile), cfg.VideoLanguage, cfg.SubtitleLanguages)
 		return inputFile, nil
 	}
 
 	if checkOnly {
-		fmt.Printf("Skipping %s: Needs fixing (check-only mode)\n", inputFile)
+		fmt.Printf("Skipping %s: Needs fixing (check-only mode)\n", filepath.Base(inputFile))
 		return "", nil // Return empty string so it's NOT added to cache and NOT reported as error
 	}
 
@@ -184,7 +184,7 @@ func remuxFile(ctx context.Context, inputFile string, cfg *Config, checkOnly boo
 		return "", fmt.Errorf("could not delete original file: %w", err)
 	}
 
-	fmt.Printf("Success: %s -> %s\n", inputFile, outputFile)
+	fmt.Printf("Success: %s -> %s\n", filepath.Base(inputFile), filepath.Base(outputFile))
 	return outputFile, nil
 }
 

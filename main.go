@@ -159,13 +159,13 @@ func runProcessing(c *cli.Context, actionType ActionType) error {
 
 			finalPath, err := remuxFile(ctx, path, cfg, checkOnly, actionType)
 			if err != nil {
-				fmt.Printf("Worker %d: Failed to process %s: %v\n", id, path, err)
+				fmt.Printf("Worker %d: Failed to process %s: %v\n", id, filepath.Base(path), err)
 			} else {
 				// Success (remuxed OR skipped as compliant)
 				if finalPath != "" {
 					// Use same cacheKey for Update
 					if err := fileCache.Update(cacheKey, finalPath); err != nil {
-						fmt.Printf("Worker %d: Warning - Failed to update cache for %s: %v\n", id, finalPath, err)
+						fmt.Printf("Worker %d: Warning - Failed to update cache for %s: %v\n", id, filepath.Base(finalPath), err)
 					}
 				}
 			}
