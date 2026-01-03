@@ -54,7 +54,8 @@ func remuxFile(ctx context.Context, inputFile string, cfg *Config, checkOnly boo
 		if track.Type == "video" {
 			hasVideo = true
 			if actionType == ActionAll || actionType == ActionAudio {
-				if track.Properties.Language != cfg.VideoLanguage {
+				_, fixNeeded := determineTargetVideoLanguage(&track, &info, cfg.VideoLanguage)
+				if fixNeeded {
 					needsFix = true
 				}
 			}
@@ -146,7 +147,8 @@ func remuxFile(ctx context.Context, inputFile string, cfg *Config, checkOnly boo
 		// Set Video Language
 		if track.Type == "video" {
 			if actionType == ActionAll || actionType == ActionAudio {
-				args = append(args, "--language", fmt.Sprintf("%d:%s", track.ID, cfg.VideoLanguage))
+				targetLang, _ := determineTargetVideoLanguage(&track, &info, cfg.VideoLanguage)
+				args = append(args, "--language", fmt.Sprintf("%d:%s", track.ID, targetLang))
 			}
 		}
 
@@ -186,6 +188,55 @@ func remuxFile(ctx context.Context, inputFile string, cfg *Config, checkOnly boo
 
 	fmt.Printf("Success: %s -> %s\n", filepath.Base(inputFile), filepath.Base(outputFile))
 	return outputFile, nil
+}
+
+// determineTargetVideoLanguage logic to handle "und"
+// Returns (targetLanguage, needsFix)
+func determineTargetVideoLanguage(videoTrack *Track, info *MkvInfo, preferredLang string) (string, bool) {
+	current := videoTrack.Properties.Language
+
+	// If it's already what we want, all good.
+	if current == preferredLang {
+		return preferredLang, false
+	}
+
+	// If it's specific language but NOT preferred, we definitely need fix (to force it to preferred)
+	// UNLESS it's "und" or "unk", in which case we try to be smart.
+	// Standard MKV uses "und". We'll handle "unk" just in case.
+	if current != "und" && current != "unk" {
+		return preferredLang, true // Force change to preferred
+	}
+
+	// It IS "und".
+	// Strategy:
+	// 1. If we have an audio track that is preferredLang, assume video is also that.
+	// 2. Else, assume video is same as FIRST audio track found (likely the main one).
+	// 3. Else (no audio?), keep as und.
+
+	hasPreferredAudio := false
+	var firstAudioLang string
+
+	for _, t := range info.Tracks {
+		if t.Type == "audio" {
+			if firstAudioLang == "" {
+				firstAudioLang = t.Properties.Language
+			}
+			if t.Properties.Language == preferredLang {
+				hasPreferredAudio = true
+			}
+		}
+	}
+
+	if hasPreferredAudio {
+		return preferredLang, true
+	}
+
+	if firstAudioLang != "" {
+		return firstAudioLang, true
+	}
+
+	// Fallback: stay und
+	return "und", false
 }
 
 func loadConfig(path string) (*Config, error) {
